@@ -2,7 +2,6 @@ import openai
 from fpdf import FPDF
 from fpdf.errors import FPDFUnicodeEncodingException
 from fpdf.enums import XPos, YPos
-import io
 import re
 import json
 import os
@@ -49,26 +48,27 @@ def check_and_update_limit(service_name):
     today = datetime.now().strftime("%Y-%m-%d")
     this_month = datetime.now().strftime("%Y-%m")
 
-    # Initialize usage data if file doesn't exist
-    if not os.path.exists(USAGE_FILE):
-        usage_data = {
-            "tavily": {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0},
-            "exa": {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0}
-        }
-    else:
+    initial_service_data = {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0}
+
+    # Initialize usage data if file doesn't exist or is invalid
+    usage_data = {}
+    if os.path.exists(USAGE_FILE):
         try:
             with open(USAGE_FILE, "r") as f:
                 usage_data = json.load(f)
         except json.JSONDecodeError:
-             usage_data = {
-                "tavily": {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0},
-                "exa": {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0}
-            }
+            pass # usage_data remains empty, will be populated below
+
+    # Ensure services exist in data
+    if "tavily" not in usage_data:
+        usage_data["tavily"] = initial_service_data.copy()
+    if "exa" not in usage_data:
+        usage_data["exa"] = initial_service_data.copy()
 
     service_data = usage_data.get(service_name)
     if not service_data:
-        # Should not happen if initialized correctly, but safe fallback
-        service_data = {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0}
+        # Fallback if service_name is new or unexpected
+        service_data = initial_service_data.copy()
         usage_data[service_name] = service_data
 
     # Check for Month Reset

@@ -17,9 +17,7 @@ if "simple_report_content" not in st.session_state:
 
 # Sidebar Configuration
 with st.sidebar:
-    st.header("Configuration")
-
-    # API Keys are now hardcoded in utils.py
+    st.header("Settings")
 
     mode = st.radio(
         "Select Interface Mode",
@@ -40,8 +38,8 @@ if mode == "Simple Report Generator":
     prompt = st.text_area("Enter your research topic or question:", height=150)
 
     if st.button("Start Research", type="primary"):
-        if not prompt:
-            st.error("Please enter a prompt.")
+        if not prompt or not prompt.strip():
+            st.error("Please enter a valid prompt.")
         else:
             st.session_state.simple_report_content = ""
             report_placeholder = st.empty()
@@ -49,7 +47,7 @@ if mode == "Simple Report Generator":
 
             with st.spinner("Researching..."):
                 # Stream the response
-                messages = [{"role": "user", "content": prompt}]
+                messages = [{"role": "user", "content": prompt.strip()}]
                 # No keys passed, using hardcoded ones in utils
                 for chunk in utils.stream_deep_research(messages):
                     if chunk.startswith("Error:"):
