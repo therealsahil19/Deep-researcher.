@@ -4,7 +4,7 @@ from fpdf.errors import FPDFUnicodeEncodingException
 from fpdf.enums import XPos, YPos
 import io
 
-def stream_deep_research(api_key, prompt):
+def stream_deep_research(api_key, messages):
     """
     Streams the response from the Deep Research model via OpenRouter.
     """
@@ -16,9 +16,7 @@ def stream_deep_research(api_key, prompt):
     try:
         stream = client.chat.completions.create(
             model="alibaba/tongyi-deepresearch-30b-a3b:free",
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
+            messages=messages,
             stream=True
         )
 
@@ -36,23 +34,41 @@ def generate_pdf(text):
     """
     class PDF(FPDF):
         def header(self):
-            self.set_font('helvetica', 'B', 12)
+            # Attempt to use DejaVuSans if registered, else fallback
+            font_family = 'DejaVu' if 'DejaVu' in self.fonts else 'helvetica'
+            self.set_font(font_family, 'B', 12)
             self.cell(0, 10, 'Deep Research Report', border=0, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
             self.ln(10)
 
         def footer(self):
             self.set_y(-15)
-            self.set_font('helvetica', 'I', 8)
+            font_family = 'DejaVu' if 'DejaVu' in self.fonts else 'helvetica'
+            self.set_font(font_family, 'I', 8)
             self.cell(0, 10, f'Page {self.page_no()}', border=0, new_x=XPos.RIGHT, new_y=YPos.TOP, align='C')
 
     pdf = PDF()
+
+    # Register the Unicode font
+    try:
+        pdf.add_font('DejaVu', '', 'assets/fonts/DejaVuSans.ttf')
+        pdf.add_font('DejaVu', 'B', 'assets/fonts/DejaVuSans.ttf') # Using regular for bold for now if bold not available
+        pdf.add_font('DejaVu', 'I', 'assets/fonts/DejaVuSans.ttf') # Using regular for italic for now if italic not available
+        font_family = 'DejaVu'
+    except Exception:
+        font_family = 'helvetica'
+
     pdf.add_page()
-    pdf.set_font("helvetica", size=12)
+    pdf.set_font(font_family, size=12)
 
     try:
+        # Try to use markdown=True if available in this version of fpdf2
+        # Use a compatible font if loaded
+        pdf.multi_cell(0, 10, text, markdown=True)
+    except TypeError:
+        # Fallback for older versions or if markdown param is not supported in this specific way
         pdf.multi_cell(0, 10, text)
     except (UnicodeEncodeError, FPDFUnicodeEncodingException):
-        # Fallback for fpdf2 if it tries to encode and fails
+        # Fallback for fpdf2 if it tries to encode and fails (should be rare with DejaVu)
         # We manually sanitize if the automatic handling fails
         sanitized_text = text.encode('latin-1', 'replace').decode('latin-1')
         pdf.multi_cell(0, 10, sanitized_text)
