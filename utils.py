@@ -4,8 +4,21 @@ from fpdf.errors import FPDFUnicodeEncodingException
 from fpdf.enums import XPos, YPos
 import io
 import re
+import json
+import os
+from datetime import datetime
 from tavily import TavilyClient
 from exa_py import Exa
+
+# API Keys
+OPENROUTER_API_KEY = "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"
+TAVILY_API_KEY = "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"
+EXA_API_KEY = "2c7d2f69-b23b-4d32-ab1a-750ffaf9d85b"
+
+# Rate Limits
+USAGE_FILE = "usage.json"
+DAILY_LIMIT = 30
+MONTHLY_LIMIT = 1000
 
 REACT_SYSTEM_PROMPT = """
 Answer the following question. You have access to the following tools:
@@ -27,24 +40,95 @@ Final Answer: the final answer to the original input question
 Begin!
 """
 
-def tavily_search(query, api_key):
+def check_and_update_limit(service_name):
+    """
+    Checks if the rate limit for the given service has been reached.
+    Updates the usage count if within limits.
+    Returns (True, "") if allowed, or (False, reason) if blocked.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    this_month = datetime.now().strftime("%Y-%m")
+
+    # Initialize usage data if file doesn't exist
+    if not os.path.exists(USAGE_FILE):
+        usage_data = {
+            "tavily": {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0},
+            "exa": {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0}
+        }
+    else:
+        try:
+            with open(USAGE_FILE, "r") as f:
+                usage_data = json.load(f)
+        except json.JSONDecodeError:
+             usage_data = {
+                "tavily": {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0},
+                "exa": {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0}
+            }
+
+    service_data = usage_data.get(service_name)
+    if not service_data:
+        # Should not happen if initialized correctly, but safe fallback
+        service_data = {"day": today, "month": this_month, "daily_count": 0, "monthly_count": 0}
+        usage_data[service_name] = service_data
+
+    # Check for Month Reset
+    if service_data["month"] != this_month:
+        service_data["month"] = this_month
+        service_data["monthly_count"] = 0
+        service_data["day"] = today
+        service_data["daily_count"] = 0 # New month implies new day
+
+    # Check for Day Reset
+    elif service_data["day"] != today:
+        service_data["day"] = today
+        service_data["daily_count"] = 0
+
+    # Check Limits
+    if service_data["monthly_count"] >= MONTHLY_LIMIT:
+        return False, f"Monthly limit of {MONTHLY_LIMIT} requests reached for {service_name}. Resets on {this_month}-01 (next month)."
+
+    if service_data["daily_count"] >= DAILY_LIMIT:
+        return False, f"Daily limit of {DAILY_LIMIT} requests reached for {service_name}. Resets tomorrow."
+
+    # Increment Usage
+    service_data["daily_count"] += 1
+    service_data["monthly_count"] += 1
+
+    # Save back to file
+    try:
+        with open(USAGE_FILE, "w") as f:
+            json.dump(usage_data, f, indent=4)
+    except Exception as e:
+        return False, f"Error saving usage data: {str(e)}"
+
+    return True, ""
+
+def tavily_search(query):
     """
     Performs a targeted search using Tavily.
     """
+    allowed, message = check_and_update_limit("tavily")
+    if not allowed:
+        return f"Error: {message}"
+
     try:
-        client = TavilyClient(api_key=api_key)
+        client = TavilyClient(api_key=TAVILY_API_KEY)
         response = client.search(query, search_depth="basic")
         context = [f"Source: {res['url']}\nContent: {res['content']}" for res in response.get('results', [])]
         return "\n\n".join(context)
     except Exception as e:
         return f"Error performing Tavily search: {str(e)}"
 
-def exa_search(query, api_key):
+def exa_search(query):
     """
     Performs a semantic search using Exa (formerly Metaphor).
     """
+    allowed, message = check_and_update_limit("exa")
+    if not allowed:
+        return f"Error: {message}"
+
     try:
-        exa = Exa(api_key=api_key)
+        exa = Exa(api_key=EXA_API_KEY)
         # We use search_and_contents to get snippets directly
         response = exa.search_and_contents(
             query,
@@ -57,30 +141,29 @@ def exa_search(query, api_key):
     except Exception as e:
         return f"Error performing Exa search: {str(e)}"
 
-def stream_deep_research(api_key, messages, tavily_api_key=None, exa_api_key=None):
+def stream_deep_research(messages):
     """
     Streams the response from the Deep Research model via OpenRouter.
     Implements a ReAct loop if tools (Tavily or Exa) are provided.
     """
     client = openai.OpenAI(
         base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
+        api_key=OPENROUTER_API_KEY,
     )
 
     internal_messages = list(messages)
 
-    # Inject System Prompt if any tool is enabled
-    if tavily_api_key or exa_api_key:
-        system_msg_exists = False
-        for msg in internal_messages:
-            if msg['role'] == 'system':
-                if "Answer the following question. You have access to the following tools" not in msg['content']:
-                     msg['content'] += f"\n\n{REACT_SYSTEM_PROMPT}"
-                system_msg_exists = True
-                break
+    # Inject System Prompt always since keys are now hardcoded and available
+    system_msg_exists = False
+    for msg in internal_messages:
+        if msg['role'] == 'system':
+            if "Answer the following question. You have access to the following tools" not in msg['content']:
+                    msg['content'] += f"\n\n{REACT_SYSTEM_PROMPT}"
+            system_msg_exists = True
+            break
 
-        if not system_msg_exists:
-            internal_messages.insert(0, {"role": "system", "content": REACT_SYSTEM_PROMPT})
+    if not system_msg_exists:
+        internal_messages.insert(0, {"role": "system", "content": REACT_SYSTEM_PROMPT})
 
     MAX_STEPS = 5
     step_count = 0
@@ -102,8 +185,7 @@ def stream_deep_research(api_key, messages, tavily_api_key=None, exa_api_key=Non
                     full_response += content
                     yield content
 
-            if not tavily_api_key and not exa_api_key:
-                break
+            # Since keys are hardcoded, we assume tools are available unless limits hit (checked inside tool functions)
 
             # Parse for Action
             # Regex to match Action: [action_name] and Action Input: [input]
@@ -120,20 +202,16 @@ def stream_deep_research(api_key, messages, tavily_api_key=None, exa_api_key=Non
                 observation = ""
 
                 if action_name == "search_discovery":
-                    if exa_api_key:
-                        yield f"\n\n*Executing Discovery Search (Exa): {tool_input}*\n\n"
-                        observation = exa_search(tool_input, exa_api_key)
-                    else:
-                        observation = "Error: Exa API Key not provided. Cannot perform Discovery Search."
-                        yield f"\n\n*{observation}*\n\n"
+                    yield f"\n\n*Executing Discovery Search (Exa): {tool_input}*\n\n"
+                    observation = exa_search(tool_input)
+                    if observation.startswith("Error:"):
+                         yield f"\n\n*{observation}*\n\n"
 
                 elif action_name == "search_fact":
-                    if tavily_api_key:
-                        yield f"\n\n*Executing Fact Search (Tavily): {tool_input}*\n\n"
-                        observation = tavily_search(tool_input, tavily_api_key)
-                    else:
-                        observation = "Error: Tavily API Key not provided. Cannot perform Fact Search."
-                        yield f"\n\n*{observation}*\n\n"
+                    yield f"\n\n*Executing Fact Search (Tavily): {tool_input}*\n\n"
+                    observation = tavily_search(tool_input)
+                    if observation.startswith("Error:"):
+                         yield f"\n\n*{observation}*\n\n"
 
                 # Update history
                 internal_messages.append({"role": "assistant", "content": full_response})

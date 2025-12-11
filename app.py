@@ -19,25 +19,7 @@ if "simple_report_content" not in st.session_state:
 with st.sidebar:
     st.header("Configuration")
 
-    api_key = st.text_input(
-        "OpenRouter API Key",
-        type="password",
-        help="Enter your OpenRouter API key here."
-    )
-
-    tavily_api_key = st.text_input(
-        "Tavily API Key (Optional)",
-        type="password",
-        help="Enter your Tavily API key here to enable real-time fact retrieval."
-    )
-
-    exa_api_key = st.text_input(
-        "Exa API Key (Optional)",
-        type="password",
-        help="Enter your Exa API key here to enable broad discovery search."
-    )
-
-    st.markdown("---")
+    # API Keys are now hardcoded in utils.py
 
     mode = st.radio(
         "Select Interface Mode",
@@ -51,96 +33,95 @@ with st.sidebar:
 # Main Content Area
 st.title("Deep Research Agent 🔍")
 
-if not api_key:
-    st.warning("Please enter your OpenRouter API Key in the sidebar to proceed.")
-else:
-    # Logic for different modes will go here
-    if mode == "Simple Report Generator":
-        st.subheader("Simple Report Generator")
+# Logic for different modes will go here
+if mode == "Simple Report Generator":
+    st.subheader("Simple Report Generator")
 
-        prompt = st.text_area("Enter your research topic or question:", height=150)
+    prompt = st.text_area("Enter your research topic or question:", height=150)
 
-        if st.button("Start Research", type="primary"):
-            if not prompt:
-                st.error("Please enter a prompt.")
-            else:
-                st.session_state.simple_report_content = ""
-                report_placeholder = st.empty()
-                full_response = ""
+    if st.button("Start Research", type="primary"):
+        if not prompt:
+            st.error("Please enter a prompt.")
+        else:
+            st.session_state.simple_report_content = ""
+            report_placeholder = st.empty()
+            full_response = ""
 
-                with st.spinner("Researching..."):
-                    # Stream the response
-                    messages = [{"role": "user", "content": prompt}]
-                    for chunk in utils.stream_deep_research(api_key, messages, tavily_api_key, exa_api_key):
-                        if chunk.startswith("Error:"):
-                            st.error(chunk)
-                            full_response = ""
-                            break
-                        full_response += chunk
-                        report_placeholder.markdown(full_response + "▌")
-
-                    if full_response:
-                        report_placeholder.markdown(full_response)
-                        st.session_state.simple_report_content = full_response
-                        st.success("Research Complete!")
-
-        # Show download button if content exists
-        if st.session_state.simple_report_content:
-            pdf_bytes = utils.generate_pdf(st.session_state.simple_report_content)
-            st.download_button(
-                label="📄 Download Report as PDF",
-                data=pdf_bytes,
-                file_name="deep_research_report.pdf",
-                mime="application/pdf"
-            )
-
-    elif mode == "Chat Interface":
-        st.subheader("Chat Interface")
-
-        # Display chat messages from history
-        for idx, message in enumerate(st.session_state.messages):
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-                # Add download button for assistant messages
-                if message["role"] == "assistant":
-                    col1, col2 = st.columns([0.85, 0.15]) # Push button to the right/small column
-                    with col2:
-                        pdf_bytes = utils.generate_pdf(message["content"])
-                        st.download_button(
-                            label="Download PDF",
-                            data=pdf_bytes,
-                            file_name=f"research_report_{idx}.pdf",
-                            mime="application/pdf",
-                            key=f"download_{idx}"
-                        )
-
-        # Chat input
-        if prompt := st.chat_input("Ask a question or request research..."):
-            # Add user message to chat history
-            st.session_state.messages.append({"role": "user", "content": prompt})
-
-            # Display user message in chat message container
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            # Display assistant response in chat message container
-            with st.chat_message("assistant"):
-                message_placeholder = st.empty()
-                full_response = ""
-
+            with st.spinner("Researching..."):
                 # Stream the response
-                for chunk in utils.stream_deep_research(api_key, st.session_state.messages, tavily_api_key, exa_api_key):
-                     if chunk.startswith("Error:"):
+                messages = [{"role": "user", "content": prompt}]
+                # No keys passed, using hardcoded ones in utils
+                for chunk in utils.stream_deep_research(messages):
+                    if chunk.startswith("Error:"):
+                        st.error(chunk)
+                        full_response = ""
+                        break
+                    full_response += chunk
+                    report_placeholder.markdown(full_response + "▌")
+
+                if full_response:
+                    report_placeholder.markdown(full_response)
+                    st.session_state.simple_report_content = full_response
+                    st.success("Research Complete!")
+
+    # Show download button if content exists
+    if st.session_state.simple_report_content:
+        pdf_bytes = utils.generate_pdf(st.session_state.simple_report_content)
+        st.download_button(
+            label="📄 Download Report as PDF",
+            data=pdf_bytes,
+            file_name="deep_research_report.pdf",
+            mime="application/pdf"
+        )
+
+elif mode == "Chat Interface":
+    st.subheader("Chat Interface")
+
+    # Display chat messages from history
+    for idx, message in enumerate(st.session_state.messages):
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            # Add download button for assistant messages
+            if message["role"] == "assistant":
+                col1, col2 = st.columns([0.85, 0.15]) # Push button to the right/small column
+                with col2:
+                    pdf_bytes = utils.generate_pdf(message["content"])
+                    st.download_button(
+                        label="Download PDF",
+                        data=pdf_bytes,
+                        file_name=f"research_report_{idx}.pdf",
+                        mime="application/pdf",
+                        key=f"download_{idx}"
+                    )
+
+    # Chat input
+    if prompt := st.chat_input("Ask a question or request research..."):
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        # Display user message in chat message container
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
+
+            # Stream the response
+            # No keys passed, using hardcoded ones in utils
+            for chunk in utils.stream_deep_research(st.session_state.messages):
+                    if chunk.startswith("Error:"):
                         st.error(chunk)
                         full_response = "Error occurred." # Keep it simple for history
                         break
-                     full_response += chunk
-                     message_placeholder.markdown(full_response + "▌")
+                    full_response += chunk
+                    message_placeholder.markdown(full_response + "▌")
 
-                message_placeholder.markdown(full_response)
+            message_placeholder.markdown(full_response)
 
-            # Add assistant response to chat history
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
+        # Add assistant response to chat history
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-            # Rerun to show the download button for the new message immediately
-            st.rerun()
+        # Rerun to show the download button for the new message immediately
+        st.rerun()
