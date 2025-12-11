@@ -12,7 +12,6 @@ A powerful research assistant powered by the **Tongyi DeepResearch 30B** model. 
     -   **Fact Search (Tavily)**: Used for verifying specific numbers, dates, and facts.
 -   **Real-time Streaming**: Watch the agent's thought process, tool executions, and report generation in real-time.
 -   **PDF Export**: Download reports as cleanly formatted PDFs with Unicode support (via DejaVu Sans).
--   **Secure**: API keys are handled locally within the session and never stored.
 
 ## 🛠️ Technology Stack
 
@@ -63,6 +62,7 @@ To use the full capabilities of the agent, you will need:
     -   Open the sidebar on the left.
     -   Enter your **OpenRouter API Key**.
     -   (Optional) Enter **Tavily** and **Exa** keys to enable web search capabilities.
+    -   Alternatively, you can set these as environment variables: `OPENROUTER_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`.
     -   *Note: Without search keys, the agent will rely solely on its internal knowledge base.*
 
 3.  **Select a Mode**:
