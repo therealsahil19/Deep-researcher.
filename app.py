@@ -25,6 +25,18 @@ with st.sidebar:
         help="Enter your OpenRouter API key here."
     )
 
+    tavily_api_key = st.text_input(
+        "Tavily API Key (Optional)",
+        type="password",
+        help="Enter your Tavily API key here to enable real-time fact retrieval."
+    )
+
+    exa_api_key = st.text_input(
+        "Exa API Key (Optional)",
+        type="password",
+        help="Enter your Exa API key here to enable broad discovery search."
+    )
+
     st.markdown("---")
 
     mode = st.radio(
@@ -59,7 +71,7 @@ else:
                 with st.spinner("Researching..."):
                     # Stream the response
                     messages = [{"role": "user", "content": prompt}]
-                    for chunk in utils.stream_deep_research(api_key, messages):
+                    for chunk in utils.stream_deep_research(api_key, messages, tavily_api_key, exa_api_key):
                         if chunk.startswith("Error:"):
                             st.error(chunk)
                             full_response = ""
@@ -117,7 +129,7 @@ else:
                 full_response = ""
 
                 # Stream the response
-                for chunk in utils.stream_deep_research(api_key, st.session_state.messages):
+                for chunk in utils.stream_deep_research(api_key, st.session_state.messages, tavily_api_key, exa_api_key):
                      if chunk.startswith("Error:"):
                         st.error(chunk)
                         full_response = "Error occurred." # Keep it simple for history
