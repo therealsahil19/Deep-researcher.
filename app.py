@@ -58,7 +58,8 @@ else:
 
                 with st.spinner("Researching..."):
                     # Stream the response
-                    for chunk in utils.stream_deep_research(api_key, prompt):
+                    messages = [{"role": "user", "content": prompt}]
+                    for chunk in utils.stream_deep_research(api_key, messages):
                         if chunk.startswith("Error:"):
                             st.error(chunk)
                             full_response = ""
@@ -116,7 +117,7 @@ else:
                 full_response = ""
 
                 # Stream the response
-                for chunk in utils.stream_deep_research(api_key, prompt):
+                for chunk in utils.stream_deep_research(api_key, st.session_state.messages):
                      if chunk.startswith("Error:"):
                         st.error(chunk)
                         full_response = "Error occurred." # Keep it simple for history
