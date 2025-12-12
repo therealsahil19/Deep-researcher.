@@ -2,3 +2,4 @@ __pycache__/
 usage.json
 venv/
 *.pyc
+streamlit.log

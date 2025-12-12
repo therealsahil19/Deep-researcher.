@@ -1,5 +1,6 @@
 import streamlit as st
 import utils
+import os
 
 # Page Configuration
 st.set_page_config(
@@ -28,6 +29,18 @@ with st.sidebar:
     st.markdown("---")
     st.info("Using model: `alibaba/tongyi-deepresearch-30b-a3b:free`")
 
+    st.subheader("API Configuration")
+    openrouter_api_key = st.text_input("OpenRouter API Key", type="password", help="Required for the LLM.")
+    tavily_api_key = st.text_input("Tavily API Key", type="password", help="Optional. Required for Fact Search.")
+    exa_api_key = st.text_input("Exa API Key", type="password", help="Optional. Required for Discovery Search.")
+
+    # Prioritize user input, fallback to environment variables
+    api_keys = {
+        "openrouter": openrouter_api_key or os.environ.get("OPENROUTER_API_KEY"),
+        "tavily": tavily_api_key or os.environ.get("TAVILY_API_KEY"),
+        "exa": exa_api_key or os.environ.get("EXA_API_KEY")
+    }
+
 # Main Content Area
 st.title("Deep Research Agent 🔍")
 
@@ -40,6 +53,8 @@ if mode == "Simple Report Generator":
     if st.button("Start Research", type="primary"):
         if not prompt or not prompt.strip():
             st.error("Please enter a valid prompt.")
+        elif not api_keys["openrouter"]:
+             st.error("Please provide an OpenRouter API Key in the sidebar.")
         else:
             st.session_state.simple_report_content = ""
             report_placeholder = st.empty()
@@ -48,8 +63,8 @@ if mode == "Simple Report Generator":
             with st.spinner("Researching..."):
                 # Stream the response
                 messages = [{"role": "user", "content": prompt.strip()}]
-                # No keys passed, using hardcoded ones in utils
-                for chunk in utils.stream_deep_research(messages):
+
+                for chunk in utils.stream_deep_research(messages, api_keys):
                     if chunk.startswith("Error:"):
                         st.error(chunk)
                         full_response = ""
@@ -94,32 +109,34 @@ elif mode == "Chat Interface":
 
     # Chat input
     if prompt := st.chat_input("Ask a question or request research..."):
-        # Add user message to chat history
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        if not api_keys["openrouter"]:
+             st.error("Please provide an OpenRouter API Key in the sidebar.")
+        else:
+            # Add user message to chat history
+            st.session_state.messages.append({"role": "user", "content": prompt})
 
-        # Display user message in chat message container
-        with st.chat_message("user"):
-            st.markdown(prompt)
+            # Display user message in chat message container
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-        # Display assistant response in chat message container
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
+            # Display assistant response in chat message container
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                full_response = ""
 
-            # Stream the response
-            # No keys passed, using hardcoded ones in utils
-            for chunk in utils.stream_deep_research(st.session_state.messages):
-                    if chunk.startswith("Error:"):
-                        st.error(chunk)
-                        full_response = "Error occurred." # Keep it simple for history
-                        break
-                    full_response += chunk
-                    message_placeholder.markdown(full_response + "▌")
+                # Stream the response
+                for chunk in utils.stream_deep_research(st.session_state.messages, api_keys):
+                        if chunk.startswith("Error:"):
+                            st.error(chunk)
+                            full_response = "Error occurred." # Keep it simple for history
+                            break
+                        full_response += chunk
+                        message_placeholder.markdown(full_response + "▌")
 
-            message_placeholder.markdown(full_response)
+                message_placeholder.markdown(full_response)
 
-        # Add assistant response to chat history
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+            # Add assistant response to chat history
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-        # Rerun to show the download button for the new message immediately
-        st.rerun()
+            # Rerun to show the download button for the new message immediately
+            st.rerun()

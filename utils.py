@@ -9,11 +9,6 @@ from datetime import datetime
 from tavily import TavilyClient
 from exa_py import Exa
 
-# API Keys
-OPENROUTER_API_KEY = "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"
-TAVILY_API_KEY = "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"
-EXA_API_KEY = "2c7d2f69-b23b-4d32-ab1a-750ffaf9d85b"
-
 # Rate Limits
 USAGE_FILE = "usage.json"
 DAILY_LIMIT = 30
@@ -103,32 +98,32 @@ def check_and_update_limit(service_name):
 
     return True, ""
 
-def tavily_search(query):
+def tavily_search(query, api_key):
     """
     Performs a targeted search using Tavily.
     """
-    allowed, message = check_and_update_limit("tavily")
-    if not allowed:
-        return f"Error: {message}"
+    # allowed, message = check_and_update_limit("tavily")
+    # if not allowed:
+    #     return f"Error: {message}"
 
     try:
-        client = TavilyClient(api_key=TAVILY_API_KEY)
+        client = TavilyClient(api_key=api_key)
         response = client.search(query, search_depth="basic")
         context = [f"Source: {res['url']}\nContent: {res['content']}" for res in response.get('results', [])]
         return "\n\n".join(context)
     except Exception as e:
         return f"Error performing Tavily search: {str(e)}"
 
-def exa_search(query):
+def exa_search(query, api_key):
     """
     Performs a semantic search using Exa (formerly Metaphor).
     """
-    allowed, message = check_and_update_limit("exa")
-    if not allowed:
-        return f"Error: {message}"
+    # allowed, message = check_and_update_limit("exa")
+    # if not allowed:
+    #     return f"Error: {message}"
 
     try:
-        exa = Exa(api_key=EXA_API_KEY)
+        exa = Exa(api_key=api_key)
         # We use search_and_contents to get snippets directly
         response = exa.search_and_contents(
             query,
@@ -141,29 +136,45 @@ def exa_search(query):
     except Exception as e:
         return f"Error performing Exa search: {str(e)}"
 
-def stream_deep_research(messages):
+def stream_deep_research(messages, api_keys):
     """
     Streams the response from the Deep Research model via OpenRouter.
     Implements a ReAct loop if tools (Tavily or Exa) are provided.
     """
+    if not api_keys.get("openrouter"):
+        yield "Error: OpenRouter API Key not provided."
+        return
+
     client = openai.OpenAI(
         base_url="https://openrouter.ai/api/v1",
-        api_key=OPENROUTER_API_KEY,
+        api_key=api_keys["openrouter"],
     )
 
     internal_messages = list(messages)
 
-    # Inject System Prompt always since keys are now hardcoded and available
-    system_msg_exists = False
-    for msg in internal_messages:
-        if msg['role'] == 'system':
-            if "Answer the following question. You have access to the following tools" not in msg['content']:
-                    msg['content'] += f"\n\n{REACT_SYSTEM_PROMPT}"
-            system_msg_exists = True
-            break
+    # Determine available tools
+    available_tools = []
+    if api_keys.get("exa"):
+        available_tools.append("search_discovery")
+    if api_keys.get("tavily"):
+        available_tools.append("search_fact")
 
-    if not system_msg_exists:
-        internal_messages.insert(0, {"role": "system", "content": REACT_SYSTEM_PROMPT})
+    # Inject System Prompt if tools are available
+    if available_tools:
+        system_prompt = REACT_SYSTEM_PROMPT
+        system_msg_exists = False
+        for msg in internal_messages:
+            if msg['role'] == 'system':
+                if "Answer the following question. You have access to the following tools" not in msg['content']:
+                        msg['content'] += f"\n\n{system_prompt}"
+                system_msg_exists = True
+                break
+
+        if not system_msg_exists:
+            internal_messages.insert(0, {"role": "system", "content": system_prompt})
+    else:
+        # If no tools, we don't inject ReAct prompt, just rely on model knowledge
+        pass
 
     MAX_STEPS = 5
     step_count = 0
@@ -185,7 +196,9 @@ def stream_deep_research(messages):
                     full_response += content
                     yield content
 
-            # Since keys are hardcoded, we assume tools are available unless limits hit (checked inside tool functions)
+            # Check if we should look for actions
+            if not available_tools:
+                break
 
             # Parse for Action
             # Regex to match Action: [action_name] and Action Input: [input]
@@ -201,17 +214,22 @@ def stream_deep_research(messages):
 
                 observation = ""
 
-                if action_name == "search_discovery":
+                if action_name == "search_discovery" and "search_discovery" in available_tools:
                     yield f"\n\n*Executing Discovery Search (Exa): {tool_input}*\n\n"
-                    observation = exa_search(tool_input)
+                    observation = exa_search(tool_input, api_keys["exa"])
                     if observation.startswith("Error:"):
                          yield f"\n\n*{observation}*\n\n"
 
-                elif action_name == "search_fact":
+                elif action_name == "search_fact" and "search_fact" in available_tools:
                     yield f"\n\n*Executing Fact Search (Tavily): {tool_input}*\n\n"
-                    observation = tavily_search(tool_input)
+                    observation = tavily_search(tool_input, api_keys["tavily"])
                     if observation.startswith("Error:"):
                          yield f"\n\n*{observation}*\n\n"
+
+                else:
+                    # Model tried to use a tool it doesn't have access to or hallucinates
+                    yield f"\n\n*Model attempted to use {action_name} but key is missing.*\n\n"
+                    break
 
                 # Update history
                 internal_messages.append({"role": "assistant", "content": full_response})
