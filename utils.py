@@ -1,4 +1,5 @@
 import openai
+import logging
 from fpdf import FPDF
 from fpdf.errors import FPDFUnicodeEncodingException
 from fpdf.enums import XPos, YPos
@@ -8,6 +9,14 @@ import os
 from datetime import datetime
 from tavily import TavilyClient
 from exa_py import Exa
+
+# Configure logging
+logging.basicConfig(
+    filename='deep_research.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Rate Limits
 USAGE_FILE = "usage.json"
@@ -141,13 +150,25 @@ def stream_deep_research(messages, api_keys):
     Streams the response from the Deep Research model via OpenRouter.
     Implements a ReAct loop if tools (Tavily or Exa) are provided.
     """
+    logger.info("Starting deep research stream")
+
     if not api_keys.get("openrouter"):
+        logger.error("OpenRouter API Key not provided")
         yield "Error: OpenRouter API Key not provided."
         return
+
+    # Log key details (masked) for debugging
+    key = api_keys["openrouter"]
+    masked_key = f"{key[:8]}...{key[-4:]}" if len(key) > 12 else "***"
+    logger.info(f"Using OpenRouter Key: {masked_key} (Length: {len(key)})")
 
     client = openai.OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_keys["openrouter"],
+        default_headers={
+            "HTTP-Referer": "http://localhost:8501",
+            "X-Title": "Deep Research Agent",
+        }
     )
 
     internal_messages = list(messages)
@@ -243,6 +264,7 @@ def stream_deep_research(messages, api_keys):
                 break
 
         except Exception as e:
+            logger.error(f"Error during streaming: {str(e)}", exc_info=True)
             yield f"Error: {str(e)}"
             break
 

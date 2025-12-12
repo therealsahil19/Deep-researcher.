@@ -35,10 +35,14 @@ with st.sidebar:
     exa_api_key = st.text_input("Exa API Key", type="password", help="Optional. Required for Discovery Search.")
 
     # Prioritize user input, fallback to environment variables
+    def get_api_key(user_input, env_var):
+        key = user_input or os.environ.get(env_var)
+        return key.strip() if key else None
+
     api_keys = {
-        "openrouter": openrouter_api_key or os.environ.get("OPENROUTER_API_KEY"),
-        "tavily": tavily_api_key or os.environ.get("TAVILY_API_KEY"),
-        "exa": exa_api_key or os.environ.get("EXA_API_KEY")
+        "openrouter": get_api_key(openrouter_api_key, "OPENROUTER_API_KEY"),
+        "tavily": get_api_key(tavily_api_key, "TAVILY_API_KEY"),
+        "exa": get_api_key(exa_api_key, "EXA_API_KEY")
     }
 
 # Main Content Area
